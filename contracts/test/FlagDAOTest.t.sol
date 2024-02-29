@@ -16,16 +16,17 @@ $ forge test --mt testUUPS  -vvvvv
 */
 
 contract FlagDAOTest is Test {
-
  
     UUPSProxy proxy;
     FlagDAO public f_v1;
     FlagDAO public f;
     address public demian = address(0x65);  // owner
-    address public fred  = address(10086);  // flager
-    address public alice = address(1);      // better Alice.
-    address public bob   = address(2);      // better Bob.
+    address public fred  = address(0x10086);  // flager
+    address public alice = address(0x01);      // better Alice.
+    address public bob   = address(0x02);      // better Bob.
     
+
+
     function setUp() public {
         FlagDAO implementationV1 = new FlagDAO();
 
@@ -36,8 +37,22 @@ contract FlagDAOTest is Test {
         f_v1.initialize(demian);
         f = f_v1;
 
+        // string calldata goal,
+        // string calldata arTxId, 
+        // string calldata name, 
+        // string calldata label,
+        // uint startDate,
+        // uint endDate
+
         hoax(fred, 10 ether);
-        f.createFlag{value: 1 wei}("arTxId - flag-0");
+        f.createFlag{value: 1 wei}(
+            "one simple goal",
+            "",
+            "Mike",
+            "Rust",
+            1674230400,
+            1707132087
+        );
 
         // ------------------------------------------------------------
         // Foundry upgradeToAndCall not success yet....
@@ -63,7 +78,14 @@ contract FlagDAOTest is Test {
          *  Fred calls create and sends 10 ETH
          */
         hoax(fred, 100 wei); // ether
-        f.createFlag{value: 100 wei}("arTxId - flag-1");
+        f.createFlag{value: 100 wei}(
+            "one simple goal",
+            "",
+            "Mike",
+            "Rust",
+            1674230400,
+            1707132087
+        );
 
         uint256 id = 1;
         assertEq(100, f.getPools(id)[0]); // selfpool
@@ -88,7 +110,6 @@ contract FlagDAOTest is Test {
         console2.log("contarct balance: ", address(f).balance);
         assertEq(100, f.getPools(id)[0]); // selfpool
         assertEq(alice_pledgement, f.getPools(id)[1]); // betspool
-
 
         // Bob gamble on the `flag-1`
         hoax(bob, 10 ether);
@@ -278,7 +299,66 @@ contract FlagDAOTest is Test {
         console2.log("bob balance:", bob.balance);
     }
 
+    function test_flag_struct() public {
+        testCreate();     // flager Fred pledge 100 wei. & 1 wei in setup
 
+        // console2.log(fred);
+        uint256 id = 1;   // flagId
+        uint256 alice_pledgement = 1 wei;
+        
+        // hoax(alice, 10 ether);
+        deal(alice, 1 ether);
+        vm.startPrank(alice);
+
+        f.gamblePledge{value: alice_pledgement}(id);
+
+        FlagDAO.Flag memory flag = f.getFlag(1);
+        console2.log("flag.flager: ", flag.flager);
+        console2.log("flag.bettors: ", flag.bettors[0]);
+        console2.log("flag.bet vals: ", flag.bet_vals[0]);
+
+        console2.log(msg.sender);
+        
+        // f.gamblePledge{value: 100}(id);
+        // flag = f.getFlag(1);
+        // console2.log("flag.bettors: ", flag.bettors[0]);
+        // console2.log("flag.bet vals: ", flag.bet_vals[0]);
+
+        vm.stopPrank();
+    }
+
+
+    function test_alice_repeat_gamble() public {
+        testCreate();     // flager Fred pledge 100 wei. & 1 wei in setup
+        console2.log(msg.sender);
+        
+        console2.log(alice);
+
+        /*
+         *  Alice gamble on the `flag-1`
+         */
+        uint256 id = 1;   // flagId
+        uint256 alice_pledgement = 1 wei;
+        
+        hoax(alice, 10 ether);
+        f.gamblePledge{value: alice_pledgement}(id);
+        console2.log("contarct balance: ", address(f).balance);
+        assertEq(f.getPools(id)[0], 100);              // selfpool
+        assertEq(f.getPools(id)[1], alice_pledgement); // betspool
+
+        console2.log(msg.sender);
+
+        // hoax(alice, 10 ether); // alice's address is address(1)
+        vm.startPrank(alice);
+        // vm.prank(alice);  
+        console2.log(msg.sender);  // 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38
+        // f.gamblePledge{value: alice_pledgement+alice_pledgement}(id);
+        // console2.log("contarct balance: ", address(f).balance);
+        // assertEq(100, f.getPools(id)[0]); // selfpool
+        // console2.log("alice ", f.getPools(id)[1]);
+        // assertEq(alice_pledgement * 3, f.getPools(id)[1]); // betspool
+
+    }
 
     /*  ------------------------------------------------------------------------------------
      *  Alice gamble on the `flag-1`

@@ -1,34 +1,47 @@
-import { useContractWrite, usePrepareContractWrite, useAccount, useContractEvent} from "wagmi"
+import { 
+  // useContractWrite, 
+  // usePrepareContractWrite, 
+  useAccount, 
+  useWatchContractEvent,
+  useWriteContract,
+  type BaseError,
+} from "wagmi"
 import { createClient } from "@supabase/supabase-js"
 import { supabaseKey, supabaseUrl } from "../utils/credentials"
 import Avatar, { genConfig } from "react-nice-avatar"
-import { getTimeDifference } from "../utils/utils"
+import { getTimeDiff, getDateFromUnixtime} from "../utils/utils"
 import {parseEther, ethers} from "ethers";
 
 import { useState, useEffect, lazy } from "react"
 import { CardProps } from "./Homepage"
-// import contractABI from "./utils/FlagDAO.json";
 import useDebounce from "../utils/useHooks"
 import {
   FLAGDAO_CONTRACT_ADDR,
   contractABI,
 } from "../utils/constants"
-// const BettorsModal = lazy(() => import("./components/BettorsModal"))
+
 import { calculate_pledgement } from "./ModalCreateFlag"
 import Image from 'next/image'
-// import { BsCurrencyBitcoin } from "react-icons/bs"
-// import { useContractEvents, useContract } from "@thirdweb-dev/react";
+import BettorsModal from "./BettorsModal"
+import { ContractOwener } from "../utils/constants"
+// const supabase = createClient(supabaseUrl, supabaseKey)
 
-// const config = genConfig()
-const supabase = createClient(supabaseUrl, supabaseKey)
-
+export interface BettorsProps {
+  id: number
+}
 
 const Card: React.FC<CardProps> = (props) => {
   const [amt, setAmt] = useState<number>(0.01)
   const _amt = useDebounce(amt, 10)
-  const [id, setId] = useState<Number>(props.flagId)
+  const [id, setId] = useState<Number>(props.id)
   const _id = useDebounce(id, 100)
+  const [isOwner, setIsOwner] = useState<boolean>(false)
+  
   const { address } = useAccount()
+  useEffect(()=>{
+    if (address == ContractOwener) { setIsOwner(true) }
+    console.log("isOwner setIsOwner", isOwner)
+  },)
 
   // console.log("created_at", getTimeDifference(props.created_at));
 
@@ -36,97 +49,36 @@ const Card: React.FC<CardProps> = (props) => {
     setId(e.target.value)
   }
 
-  const { config } = usePrepareContractWrite({
-    address: FLAGDAO_CONTRACT_ADDR,
-    abi: contractABI,
-    // chainId: REACT_APP_CHAIN_ID,
-    functionName: "gamblePledge",
-    args: [_id,],
-    value: parseEther(calculate_pledgement(_amt)), // ethers.utils.parseEther("0.1"),
-    enabled: Boolean(_id),
-  })
-
-  const {
-    data,
-    isLoading,
-    isSuccess,
-    isError,
-    write: write_gamblePledge,
-    error,
-  } = useContractWrite(config)
-  if (error) console.log("Pledge error", error)
-
-
-
-  // there exists id=3, I want to update the JSON Array field, that add `{"bettor": "mike", "amt": 0.001}` into the JSON Array
-  // fetch the bettors list:
-  const testFetchJSONOfBettors = async () =>  {
-    const { data: fetchBettorsData, error: fetchBettorsError } = await supabase
-      .from('flag')
-      .select(`
-        flagId, name, bettors,
-        bettors->name,
-        bettors->value
-      `).eq("flagId", _id)
-      .limit(1);
-      console.log("fetchBettorsData -  returns:\n", _id, fetchBettorsData)
-
-      if (fetchBettorsData && fetchBettorsData.length > 0 && fetchBettorsData[0].bettors) {
-        return {
-          name: fetchBettorsData[0].bettors.name,
-          value: fetchBettorsData[0].bettors.value,
-        };
-      }
-      return { name: [], value: [] };
-  }
-
-  const InsertBettorsToSupabase = async () => {
-
-      const {name: namelist, value: valuelist} = await testFetchJSONOfBettors();
-      
-      console.log("namelist, valuelist", namelist, valuelist);
-
-      const updatedBettors = {
-        name: [...namelist, address],
-        value: [...valuelist, _amt]
-      };
-
-      const { data: datatest, error } = await supabase
-        .from('flag')
-        .update({
-          bettors: updatedBettors
-        })
-        // .eq('address->postcode', 90210)  // selector
-        .eq("flagId", _id)
-        .select();
-        // console.log("testInsertJson function returns:\n", datatest)
-      ;
-    }
-
-
+  const { data, error, writeContract, isPending, isError, isSuccess } = useWriteContract() 
+  // console.log("error.", error)
+  
   const handleSubmit = async (e: any) => {
     e.preventDefault()
     try {
-      console.log("handleSubmit...")
-      await write_gamblePledge?.()
-    } catch (error) {
-      console.error('Gamble-Pledge transaction failed:', error)
+      console.log("handleSubmit... id: ", _id)
+        writeContract({ 
+        address: FLAGDAO_CONTRACT_ADDR,
+        abi: contractABI, 
+        functionName: 'gamblePledge', 
+        args: [_id],
+        value: parseEther(calculate_pledgement(_amt)), // ethers.utils.parseEther("0.1"),
+      })
+    } catch (e) {
+      console.log('Gamble-Pledge transaction failed:', error)
     }
   }
-  
-  // listen the blockchain chage.   // useEffect(() => {  },[])
-  // 有 2 个 TS compiler Warning(不用管):
-  // 1. Property 'args' does not exist on type 'Log'.ts(2339)
-  // 2. Cannot invoke an object which is possibly 'undefined'.ts(2722) 
-  const unwatch = useContractEvent({
+  // console.log("data, isPending, isError, isSuccess \n", data,isPending, isError, isSuccess )
+
+  useWatchContractEvent({
     address: FLAGDAO_CONTRACT_ADDR,
     abi: contractABI,
     eventName: 'GamblePledge',
-    listener: (logs) => {
+    onLogs(logs) {
+      console.log('New logs!', logs)
       // logs[0] 里面放的是 _mint 函数 emit 的事件.
       const { args } = logs[1] as any; // 跳过类型检查
       console.log("`GamblePledge` Listen ..", args, )
-      InsertBettorsToSupabase()   // 更新后端 supabase
+      // InsertBettorsToSupabase()   // 更新后端 supabase
     },
   })
 
@@ -143,36 +95,23 @@ const Card: React.FC<CardProps> = (props) => {
 
   return (
     <div className="flex justify-center">
-      <div className="flex md:max-w-2xl w-full justify-between md:flex-row p-4 m-4 flex-col items-center rounded-2xl bg-white shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)]">
+      {/* md:max-w-2xl */}
+      <div className="px-12 flex w-full justify-between md:flex-row py-1 m-4 flex-col items-center rounded-2xl bg-white shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)]">
         <div className="flex flex-row items-center">
-          {/* Avatar */}
           <div className="flex-col items-center p-4">
             <div>
-
-
-
-
-            {/*             
-              <button 
-                 className="bg bg-amber-600 m-2 p-2 w-full h-full"
-                 onClick={(e) => testFetchJSONOfBettors()}> testFetchJSONOfBettors 
-              </button>
-
-
-              <button 
-                 className="bg bg-amber-600 m-2 p-2 w-full h-full"
-                 onClick={(e) => testInsertJson()}> testInsertJson 
-              </button> */}
-
-
               <Avatar
                 style={{ width: "5rem", height: "5rem" }}
                 {...genConfig(props?.name || "default")}
               />{" "}
             </div>
-            <div className="text-center text-slate-800 font-medium">
+            <div className="text-center text-slate-800 font-medium italic">
               @{props?.name}
             </div>
+            <div className="text-center text-slate-500 text-xs">
+              {props?.flager?.slice(0, 5)}...{props?.flager?.slice(-5)}{" "}
+            </div>
+
           </div>
 
           {/* Middle: flag Content / Pledgement / labes */}
@@ -182,48 +121,46 @@ const Card: React.FC<CardProps> = (props) => {
               {props?.goal}
               <Image src="./iconmonstr-quote-3.svg" width={30} height={30} className="inline pl-3 pt-3" alt="" />
             </p>
-            <div className="flex justify-start font-sans py-1 text-slate-400 font-medium">
-              <span className="text-sm pt-1 pr-1">Self Pledged: </span>{" "}
-              <span className="text-lg font-bold text-indigo-700">
-                {" "}
-                ${props?.pledgement?.toString()}
+            <div className="flex pb-1 justify-start font-sans text-base text-slate-400 font-medium">
+              <span>self gmabled: </span>{" "}
+              <span className="pl-2 font-semibold text-orange-400">
+                {" "}{(Number(props?.amt) / (10 ** 18)).toString()} {"ETH."}
               </span>
-              {/* <span className="text-sm pt-1 pr-1 ml-4">Bettors: </span> <span className="text-lg font-bold text-lime-700">${props?.bettors_plg?.toString()}</span> */}
-              {/* 
-              <BettorsModal
-                bettors_plg={props.bettors_plg}
-                flag_id={props.flag_id}
-              /> */}
+            </div>
+
+            <div className="pb-2">
+                <BettorsModal id={props.id} />
             </div>
 
             <div className="flex justify-start text-xs py-1 text-slate-400 font-medium">
               <span>
                 {" "}
-                🏁 flag From {props?.startDate} To {props?.endDate}
+                🏁 flag From {getDateFromUnixtime(props?.startDate)} To {getDateFromUnixtime(props?.endDate)}
               </span>
             </div>
             <p className="text-xs  text-slate-400 pb-4">
-              {props?.address?.slice(0, 5)}...{props?.address?.slice(-5)}{" "}
-              {getTimeDifference(props?.created_at)}
+              <span className="text-slate-600 font-medium italic">@{props?.name}{" "}</span>
+              {getTimeDiff(props?.startDate)}
             </p>
 
             <div className="Labels & # Status">
               <button className="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2">
-                #Flag
+                #{props.label}
               </button>
               <button
                 className={`inline-block rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2 
                 ${
-                  props?.flagStatus === "Ongoing"
+                  props?.status === 0
                     ? "bg-yellow-500"
-                    : props?.flagStatus === "Success"
+                    : props?.status === 1
                     ? "bg-green-600"
-                    : props?.flagStatus === "Rug"
+                    : props?.status === 2
                     ? "bg-red-500"
                     : ""
                 }`}
               >
-                {props?.flagStatus}
+                {props?.status === 0 ? "WIP" : props?.status === 1 ? "Success!" : "Rug!"}
+
               </button>
             </div>
           </div>
@@ -232,12 +169,17 @@ const Card: React.FC<CardProps> = (props) => {
         {/* Button & input of Pledge */}
         <div>
           {" "}
-          {props?.flagStatus == "Ongoing" && (
+          {props?.status === 0 && (
             <form onSubmit={(e) => handleSubmit(e)}>
 
-              {isLoading ? (
+
+              {error && ( 
+                <div>Error: {(error as BaseError).shortMessage || error.message}</div> 
+              )} 
+
+              {isPending ? (
                 <span className="font-sans font-semibold text-slate-800 text-base  text-center  rounded-lg ">
-                  Pledging..
+                  Pending..
                 </span>
               ) : (
                 <>
@@ -275,8 +217,8 @@ const Card: React.FC<CardProps> = (props) => {
               )}
             </form>
           )}
-          {/* <form>
-            {props?.flagStatus == "success" && (
+          <form>
+            {props?.status === 1 && (
               <button
                 type="submit"
                 className="border-x-0.5 font-sans font-semibold text-slate-100 text-base px-2 py-1 text-center mr-2 mb-2 bg-gradient-to-r from-red-200 via-red-300 to-yellow-200 hover:bg-gradient-to-bl focus:ring-4 focus:outline-none focus:ring-red-100 rounded-lg "
@@ -284,7 +226,7 @@ const Card: React.FC<CardProps> = (props) => {
                 Collect Winnings
               </button>
             )}
-            {props?.flagStatus == "rug" && (
+            {props?.status === 2 && (
               <button
                 type="submit"
                 className="border-x-0.5 font-sans font-semibold text-slate-100 text-base px-2 py-1 text-center mr-2 mb-2 bg-gradient-to-r from-red-200 via-red-300 to-yellow-200 hover:bg-gradient-to-bl focus:ring-4 focus:outline-none focus:ring-red-100 rounded-lg "
@@ -292,7 +234,7 @@ const Card: React.FC<CardProps> = (props) => {
                 Claim the Bet!
               </button>
             )}
-          </form> */}
+          </form>
         </div>
       </div>
     </div>

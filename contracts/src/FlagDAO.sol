@@ -38,12 +38,17 @@ contract FlagDAO is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     } // 0 = 未完成(初始状态), 1=Done, 2 = Rug
 
     struct Flag {
-        uint256 id; 
+        uint256 id;
+        string goal;
         string arTxId;        // arweave transaction id
+        string name;
+        string label;
         address flager;
         uint256 amt;          // flager pledged amt.
         FlagStatus status;    // flag's status : `undone / Done / Rug`
-
+ 
+        uint startDate;       // GMT timestamp of date of contest
+        uint endDate;         // GMT timestamp of date of contest
         address[] bettors;    // up to 100 bettors
         uint256[] bet_vals;   // up to 100 bettors
     }
@@ -106,9 +111,55 @@ contract FlagDAO is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     function getPools(uint256 id) public view returns(uint256[2] memory) {
         return [selfpool[id], betspool[id]];
     }
-    function getBettorShares(uint256 _id, address _addr) public view returns(uint256) {
-        return bettorShares[_id][_addr];
+
+    // function getBettorShares(uint256 _id, address _addr) public view returns(uint256) {
+    //     return bettorShares[_id][_addr];
+    // }
+    function getBettors(uint256 id) view public returns(address[] memory){
+        if(id >= flagId) { revert FlagIdNotExist(); }
+        Flag storage flag = flags[id];
+        return flag.bettors;
     }
+    function getBettorShares(uint256 id) public view returns(uint256[] memory) {
+        if(id >= flagId) { revert FlagIdNotExist(); }
+        Flag storage flag = flags[id];
+        return flag.bet_vals;
+    }
+
+    function getFlag(uint256 id) view public returns(Flag memory) {
+        if(id >= flagId) { revert FlagIdNotExist(); }
+        return flags[id];
+    }
+
+    // 分页 pagination, range default is 10
+    function getFlagsPagination(uint startIndex, uint endIndex) view public returns (Flag[] memory) {
+        if (endIndex >= flagId) { // 确保 endIndex不超过最大flagId
+            endIndex = flagId - 1; // 如果 endIndex 基于0开始计数，使用flagId - 1
+        }
+
+        uint resultSize = endIndex - startIndex + 1; // 计算结果数组的大小
+        Flag[] memory res = new Flag[](resultSize); // 根据需要的结果大小创建数组
+
+        // 为了填充res数组，我们需要一个单独的索引
+        uint resIndex = 0;
+        for (uint i = startIndex; i <= endIndex; i++) {
+            res[resIndex] = flags[i];
+            resIndex++;
+        }
+        return res;
+    }
+
+    // Function to retrieve bettors and bet_vals for a specific flagId
+    function getFlagBettorsAndVals(uint256 id) public view returns (address[] memory, uint256[] memory) {
+        if(id >= flagId) { revert FlagIdNotExist(); }
+        Flag storage flag = flags[id];
+        return (flag.bettors, flag.bet_vals);
+    }
+
+    // { 
+    //   // logic goes in here 
+    // }
+
     // function getFlagById(uint256 id) view public returns(Flag memory) { return flags[id]; }
 
     // function getFlagsByAddress(address addr) public view returns (uint256[] memory) {
@@ -120,7 +171,14 @@ contract FlagDAO is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     //     return userFlags[addr];
     // }
 
-    function createFlag(string calldata arTxId) public payable {
+    function createFlag(
+        string calldata goal,
+        string calldata arTxId, 
+        string calldata name, 
+        string calldata label,
+        uint startDate,
+        uint endDate
+    ) public payable {
         // bytes32 txHash = keccak256(abi.encodePacked(arTxId));
 
         if(msg.value == 0){ revert NoPledgement();}
@@ -130,16 +188,20 @@ contract FlagDAO is Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
         flags[flagId] = Flag(
             flagId,
+            goal,
             arTxId, 
+            name,
+            label,
             msg.sender,
             _amt,
             FlagStatus.Undone, 
+            startDate,
+            endDate,
             new address[](0), 
             new uint256[](0)
         ); // from 0.
 
         // txTo[txHash] = flagId;
-
         unchecked {
             selfpool[flagId] += _amt;
             flagId = flagId + 1;

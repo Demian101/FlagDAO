@@ -2,9 +2,9 @@ import { Akord } from "@akord/akord-js"
 import { createContext } from "react"
 
 interface PageContext {
-    akord: null | Akord
-    supabase: any
-    // user: null | User
+	num: number
+	// supabase: any
+	// user: null | User
 	// secretKey: null | string
 	// unverifiedSecretKey: null | string
 	// setUser: (user: null | User) => void
@@ -14,8 +14,8 @@ interface PageContext {
 }
 
 export const PageContext = createContext<PageContext>({
-	akord: null,
-  supabase: null,
+	num: 0
+  // supabase: null,
 	// secretKey: null,
 	// unverifiedSecretKey: null,
 	// setUser: (user) => {},

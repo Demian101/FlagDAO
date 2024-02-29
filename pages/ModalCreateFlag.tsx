@@ -3,18 +3,17 @@ import {Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, useDis
 import React, { useState, useEffect, useRef } from "react"
 import "ethers";
 import {parseEther, ethers, Numeric} from "ethers";
-import UploadToArweave, {CanShowAlert } from "../utils/UploadToArweave"
 import { useForm, SubmitHandler } from "react-hook-form"
-import DatePicker from "react-datepicker";
 import { TuiDateRangePicker } from 'nextjs-tui-date-range-picker';
+import { useRouter } from "next/router"
 
 import {
-  useContractWrite,
-  useContractRead,
-  usePrepareContractWrite,
-  useContractEvent,
+  useWriteContract,
+  useWatchContractEvent,
   useAccount,
-  useNetwork,
+  useReadContract,
+  // useChains,
+  // useChainId
 } from "wagmi"
 
 import {
@@ -22,10 +21,10 @@ import {
   contractABI,
 } from "../utils/constants"
 import useDebounce from "../utils/useHooks";
-import { supabase } from "./_app";
+// import { supabase } from "./_app";
 
-import getNewestFlags from "./api/getNewestFlag";
-import postToSupabase from "./api/post";
+// import getNewestFlags from "./api/getNewestFlag";
+// import postToSupabase from "./api/post";
 
 type Inputs = {
     name: string
@@ -45,39 +44,27 @@ export const calculate_pledgement = (_pledgement: number | string): string => {
     return pledgementValue;
 }
 
+
+
+
+
+
 const ModalCreateFlag: React.FC = () => {
+
+  const router = useRouter()
   const {isOpen, onOpen, onOpenChange} = useDisclosure();
   
-  const arweaveRef = useRef<CanShowAlert>(null); // 调用子组件的方法
   const [flagIdContract, setFlagIdContract] = useState<number>(0);
-  const [flagIdBackend, setFlagIdBackend] = useState<number>(0);
 
-  // 接受从子组件 <UploadToArweave /> 传来的 arId. 设置到父组件中.
-  const [arId, setArId] = useState<string>("");  // 存储 upload 后的 nftId
-  const [mintStatus, setMintStatus] = useState<string>("");  // 存储 upload 情况(一般是 minting...)
-
-  // 子组件调用时, 会 call 这个传递 arId, onArweaveIdSet 函数传递 arId
-  const handleArIdChange = (arId: string) => { // 
-    console.log("handleArIdChange arId: ", arId);
-    setArId(arId);
-    setMintStatus("");
-  };
-
-  const handleArNFTMint = (status: string) => { // Minting. if(mintStatus == "Minting") { .. }
-    console.log("handleArNFTMint status: ", status);
-    setMintStatus(status);
-  }
-
-
-  // const [startDate, setStartDate] = useState<number | Date>(0);
-  // const [endDate, setEndDate] = useState<number | Date>(0);
-  // const [startDate, setStartDate] = useState(new Date());
   const initDate = new Date();
   initDate.setMonth(initDate.getMonth() + 1);
+
   const [startDate, setStartDate] = useState<Date>(new Date());
   const [endDate, setEndDate] = useState<Date>(initDate);
   const [unixTimeStart, setUnixTimeStart] = useState<number>();
   const [unixTimeEnd, setUnixTimeEnd] = useState<number>();
+  const [isFlaged, setIsFlaged] = useState<number>(0);
+
   const options = {
     language: 'en',
     usageStatistics: false,
@@ -85,19 +72,24 @@ const ModalCreateFlag: React.FC = () => {
     selectableRangeStart: startDate,
     selectableRangeEnd: endDate,
   };
+
   const handleReset = () => {
     setStartDate(new Date());
     setEndDate(initDate);
   };
+
   useEffect(()=>{
     setUnixTimeStart(Math.floor(startDate.getTime() / 1000));
     setUnixTimeEnd(Math.floor(endDate.getTime() / 1000));
   }, [startDate, endDate])
-  console.log("startDate.getTime()", unixTimeStart);
-  console.log("endDate.getTime()", unixTimeEnd);
+  // console.log("startDate.getTime()", unixTimeStart);
+  // console.log("endDate.getTime()", unixTimeEnd);
 
   const { address, isConnected, status } = useAccount()
-  const { chain  } = useNetwork()
+
+  // const chains = useChains()
+  // const chainId = useChainId()
+  // console.log("chains, chainId", chains, chainId)
   
   const [goal, setGoal] = useState<string>("")
   // const [pledgement, setPledgement] = useState<string>("0.01");
@@ -121,30 +113,24 @@ const ModalCreateFlag: React.FC = () => {
   const pledgementRef = useRef<number | undefined>();
   pledgementRef.current = _pledgement;
 
-  const { data: idOnchain, isError: isFlagIdErr } = useContractRead({
-    address: FLAGDAO_CONTRACT_ADDR,
+  // const { data: idOnchain, isError: isFlagIdErr } = useContractRead({
+  //   address: FLAGDAO_CONTRACT_ADDR,
+  //   abi: contractABI,
+  //   functionName: 'getNewestFlagId',
+  // })
+
+  const {data: idOnchain} = useReadContract({
     abi: contractABI,
+    address: FLAGDAO_CONTRACT_ADDR,
     functionName: 'getNewestFlagId',
   })
 
   useEffect(() => {
     if (idOnchain) { 
       setFlagIdContract(Number(idOnchain));
-      console.log("idOnchain----", idOnchain);
+      console.log("flagid(lasted) Onchain----", idOnchain);
     }
   }, [idOnchain]);
-
-
-  useEffect(() => {
-    const fetchNewestFlagFromSupabase = async () => {
-      const data = await getNewestFlags();  // api/getNewestFlag
-      if(data) {
-        setFlagIdBackend(data[0].flagId)
-        console.log("fetchNewestFlagFromSupabase----", data[0].flagId);
-      }
-    }
-    fetchNewestFlagFromSupabase();
-  }, []);
 
 
   /* forum */ 
@@ -156,107 +142,53 @@ const ModalCreateFlag: React.FC = () => {
     setLabel(watch("label"));
   }, [watch("name"), watch("goal"), watch("_pledgement"), watch("label")]);
 
+  const { 
+    data: hash, 
+    isPending,
+    isSuccess,
+    isError,
+    writeContract 
+  } = useWriteContract() 
 
-  // const postToSupabase = async (flagId: number) => {
-  //   console.log("To supabase, flag_id and others: ", nameRef.current, address, goalRef.current , pledgementRef.current )
-  //   try{      
-  //     // fetch flagID
+  async function submit(e: React.FormEvent<HTMLFormElement>) { 
+    e.preventDefault() 
+    const formData = new FormData(e.target as HTMLFormElement) 
+    const tokenId = formData.get('tokenId') as string
+    writeContract({ 
+      abi: contractABI,
+      address: FLAGDAO_CONTRACT_ADDR,
+      functionName: 'createFlag',
+      args: [_goal, "", name, label, unixTimeStart, unixTimeEnd], // no need to ** 18
+      value: parseEther(calculate_pledgement(_pledgement)), // ethers.utils.parseEther("0.1"),
+    })
+  } 
 
-  //     const newestflagId = data![0].flagId;
-  //     console.log("newest flagID from supabase", newestflagId);
-      
-  //     if(data && data[0].flagId) {
-  //       if(flagId == newestflagId) { 
-  //         return  // flagId 在后端已经存在.
-  //       }else{
-  //         const {data: res } = await supabase.from("flag").insert([
-  //           {
-  //             flagId: Number(data[0]?.flagId + 1), // whereas `TypeError: Do not know how to serialize a BigInt`
-  //             name: name,
-  //             address: address,
-  //             goal: _goal,
-  //             pledgement: _pledgement,
-  //             startAt: startAt === "" ? null : startAt,
-  //             endAt: endAt === "" ? null : endAt,
-  //             chain: chain?.name,
-  //             chainId: chain?.id,
-  //             onChain : true,
-  //             arId,
-  //           },
-  //         ]).select()
-  //         console.log("the DATA post To Backend Database: \n", res)
-  //     }
-  //   }
-  //   } catch(error) {
-  //     console.log("postToBackendDatabase error", error)
-  //   }
-  // }
-
-  // // 只有这个能监听到函数,别改了..
-  // // 这个函数不会调起 GamblePledge 事件.
-  // // Listen Event, when on-chain contract successes, execute it to post backend database.
-  useContractEvent({
+  useWatchContractEvent({
     address: FLAGDAO_CONTRACT_ADDR,
     abi: contractABI,
-    // eventName: "testEventEmit",  完整参数
-    eventName: "CreateFlag", // (我发现这个地方填函数名也可以..) 完整参数 amt arTxId flagId sender
-    listener: (logs) => {
-      // ERC1155 Transfer 的 Emit 参数:
-      // const { args } = logs[0]
-      // console.log("`testEventEmit CreateFlag`.....", args)
-     
+    eventName: 'CreateFlag',
+    onLogs(logs) {
+      console.log('New logs!', logs)
+      // console.log('logs[0]', logs[0] as any);
+      setIsFlaged((logs[0] as any).args.flagId)
 
-      // amt : 2000000000000n
-      // arTxId : "aa228340-f44a-4f65-9ee7-6aebfa8668f5"
-      // flagId : 14n
-      // sender : "0x65d5b68A7878A987e7A19826A7f9Aa6F5F92e10F"
-      const { args: arg } = logs[1] as any
-      console.log("`CreateFlag args` is .....", arg);
+      onOpenChange();
+      router.reload();
+      // 关闭 modal, router.reload()
+      // router.push("/");
+      // router.reload();
     },
   })
 
-  // create function to put flag onChian.
-  const { config } = usePrepareContractWrite({
-    address: FLAGDAO_CONTRACT_ADDR,
-    abi: contractABI,
-    chainId: chain?.id,
-    functionName: "createFlag",
-    args: [_goal, arId, name, label, 102020202, 102020203], // no need to ** 18
-    value: parseEther(calculate_pledgement(_pledgement)), // ethers.utils.parseEther("0.1"),
-  })
-
-  const { data: res, write, error, isLoading, isSuccess, isError } = useContractWrite(config)
-
-  const onSubmit: SubmitHandler<Inputs> = async (data, e) => {
-    e?.preventDefault();
-    try {
-      write?.();   //  "create(arId)"
-
-      // postToSupabase({
-      //   flagId: flagIdContract,
-      //   name: data.name,
-      //   address: address,
-      //   goal: data.goal,
-      //   pledgement: data._pledgement,
-      //   start_date: data.start_date,
-      //   end_date: data.end_date,
-      //   chainName: chain?.name,
-      //   chainId: chain?.id,
-      //   arId: arId,
-      // })
-    }
-    catch (error) { 
-      console.error("onSubmit async An error occurred:", error); 
-    }
-  }
-
-  // console.log("infos:, goal, name, startAt, endAt flagId\n", address, goal, name, startAt, endAt,)
+  // console.log("infos:, goal, name,\n", goal, name, _pledgement, label) // address
   // console.log("Test upload on Chain \n", arId, _pledgement);
   
-  // 状态判断
-  // isLoading: 调起钱包的一瞬间, 由 false -> true.
-  // isSuccess: 直到合约执行完毕, 才由 false -> true. (昨天观测到现象,今天又不成立了...)
-  // console.log("isLoading, isSuccess, isError\n", isLoading, isSuccess, isError, flagId );
+  /* 状态判断
+  - isPending/isSuccess:   false false <- 未调起
+  - isPending/isSuccess:   true false  <- 调起钱包的过程
+  - isPending/isSuccess:   false true  <- 签名完成(但还未触发链上 Event) 
+  */
+  // console.log("isPending/isSuccess:  ", isPending, isSuccess);
 
   return (
     <div className="flex justify-center items-center">
@@ -269,7 +201,7 @@ const ModalCreateFlag: React.FC = () => {
       <Modal 
         isOpen={isOpen} 
         onOpenChange={onOpenChange}
-        className="p-8 h-auto"
+        className="m-20 p-12 h-auto w-screen"
         // className="flex items-center justify-center w-full h-full"
         // overlayClassName="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
         >
@@ -284,13 +216,11 @@ const ModalCreateFlag: React.FC = () => {
           <h3 className="text-2xl mb-4 text-center font-black">
             create your FLAG!
           </h3>
-         
 
           {/* "handleSubmit" will validate your inputs before invoking "onSubmit" */}
-          <form>
+          <form onSubmit={submit}>
+
             {/* register your input into the hook by invoking the "register" function */}
-
-
             <>
               <label className="text-gray-700 font-bold block mt-4">
                 * Your flag(Goal) is:
@@ -312,8 +242,6 @@ const ModalCreateFlag: React.FC = () => {
               )}
             </>
             
-
-
 
             <label className="text-gray-700 font-bold block mt-4">
                     Flag&apos;s start/end date:
@@ -367,79 +295,7 @@ const ModalCreateFlag: React.FC = () => {
                 </div>
               )}
             </>
-            {/* <div className="grid grid-cols-2 justify-between gap-4">
-                <div id="left">
-                  <label className="text-gray-700 font-bold block mt-4">
-                    Flag&apos;s Start Date:
-                  </label>
-                  <DatePicker
-                    selected={startDate}  // startDate是您的状态变量，用于保存选择的日期
-                    onChange={(date: any) => {}setStartDate(date)} // 设置startDate状态的函数
-                    className="border-solid border-gray-300 border py-1 mt-1 px-4 w-full rounded text-gray-700"
-                    placeholderText="📅 Select start date..."
-                    // autoFocus
-                  />
-                </div>
 
-                <div id="right">
-                  <label className="text-gray-700 font-bold block mt-4">
-                    End Date:
-                  </label>
-                  <DatePicker
-                    selected={endDate}  // endDate是您的状态变量，用于保存选择的日期
-                    onChange={(date: any) => {
-                      const unixStamp = Math.floor(new Date(date).getTime() / 1000);
-                      setEndAt(unixStamp)
-                    }} // 设置endDate状态的函数
-                    className="border-solid border-gray-300 border py-1 mt-1 px-4 w-full rounded text-gray-700"
-                    placeholderText="📅 Select end date..."
-                  />
-                </div>
-            </div> */}
-            {}
-            <>
-              <UploadToArweave
-                  ref={arweaveRef} 
-                  name={name!} 
-                  goal={goal?.replace(/[\r\n]/g,"").trim()}
-                  onArweaveIdSet={handleArIdChange} 
-                  onSetMintRes  ={handleArNFTMint}
-               />  
-              {
-                ((!arId && (mintStatus != "Minting")) || (mintStatus == "Error")) && 
-                  <button className="mt-4 w-full rounded-md bg-black    py-2 text-white border font-semibold text-md"
-                    // 调用子组件的方法
-                    onClick={(e) => { arweaveRef.current?.handleUploadToArweave(e) }}>
-                    send to Arweave.
-                  </button>
-              }
-              {
-                (mintStatus == "Minting") && 
-                    <button className="mt-4 w-full rounded-md bg-black    py-2 text-white border font-semibold text-md"
-                      disabled={true}
-                    >
-                    sending to Arweave...
-                  </button>
-              }
-
-              {
-                arId && 
-                  <div className="p-4 flex flex-col justify-between">
-                    <div>✅ Success! </div>
-                    <div>Your <span className="font-bold">Arweave</span> Flag 🚩 NFT ID is: </div>
-                    <div className="text-gray-500 text-sm ml-4">{arId}</div>
-                  </div>
-              }
-            </>
-           </form>  {/* First form */}
-
-
-          {/* Second form */}
-
-          <form onSubmit={handleSubmit((e) => onSubmit(e))}>
-
-
-          {arId && 
             <>
                 <label className="text-gray-700 font-bold block mt-4">
                   Pledge amount for the flag:
@@ -447,7 +303,7 @@ const ModalCreateFlag: React.FC = () => {
                 <div className="jus justify-between grid grid-cols-2 ">
                   <input
                     className="border-solid inline  border-gray-300 py-1 mt-1 pl-4 border w-full rounded text-gray-700"
-                    defaultValue={0.01}
+                    defaultValue={0.001}
                     type="number"
                     min={0.000001}
                     max={9.2}
@@ -466,16 +322,16 @@ const ModalCreateFlag: React.FC = () => {
                   </div>
                 )}
  
-                { (!isLoading && !isSuccess) &&
+                { (!isPending && !isSuccess) &&
                     <button
                       className="mt-4 w-full rounded-md bg-black text-center  py-2 text-white border font-semibold text-md"
                       type="submit"
                       name="Submit"
-                      disabled={isLoading}>
+                      disabled={isPending}>
                       Pledge 💰 onChain
                     </button>
                 }
-                { isLoading &&
+                { isPending &&
                     <>
                       <button className="mt-4 w-full rounded-md bg-black text-center  py-2 text-white border font-semibold text-md">
                         Calling wallet, please wait...
@@ -483,10 +339,10 @@ const ModalCreateFlag: React.FC = () => {
                     </>
                 }
                 {
-                  (isSuccess && flagIdContract) && 
+                  (isSuccess && !isFlaged) && 
                       <div className="text-sm text-slate-500"> 
-                        <p>Successfully uploaded to blockchain! </p>
-                        <p>{name}({address?.slice(0, 3)}...{address?.slice(-2)}) pledged {_pledgement} ETH for her/his flag 🚩(with flagId is {Number(flagIdContract)})</p>
+                        <p>uploading on chain...</p>
+                        {/* <p>{name}({address?.slice(0, 3)}...{address?.slice(-2)}) pledged {_pledgement} ETH for her/his flag 🚩(with flagId is {Number(flagIdContract)})</p> */}
                       </div>
                 }
                 {
@@ -496,10 +352,9 @@ const ModalCreateFlag: React.FC = () => {
                     </p>
                 }
             </>
-          }
 
           </form>
-        </div>
+          </div>
         ): <div className="py-6 text-2xl font-semibold">Pls connect your wallet.</div>
         )}
         </ModalContent>
@@ -510,46 +365,3 @@ const ModalCreateFlag: React.FC = () => {
 }
 
 export default ModalCreateFlag;
-
-
-
-{/* 
-<>
-
-<Modal isOpen={isOpen} onOpenChange={onOpenChange}>
-<ModalContent>
-    {(onClose) => (
-    <>
-        <ModalHeader className="flex flex-col gap-1">Modal Title</ModalHeader>
-        <ModalBody>
-        <p> 
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-            Nullam pulvinar risus non risus hendrerit venenatis.
-            Pellentesque sit amet hendrerit risus, sed porttitor quam.
-        </p>
-        <p>
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-            Nullam pulvinar risus non risus hendrerit venenatis.
-            Pellentesque sit amet hendrerit risus, sed porttitor quam.
-        </p>
-        <p>
-            Magna exercitation reprehenderit magna aute tempor cupidatat consequat elit
-            dolor adipisicing. Mollit dolor eiusmod sunt ex incididunt cillum quis. 
-            Velit duis sit officia eiusmod Lorem aliqua enim laboris do dolor eiusmod. 
-            Et mollit incididunt nisi consectetur esse laborum eiusmod pariatur 
-            proident Lorem eiusmod et. Culpa deserunt nostrud ad veniam.
-        </p>
-        </ModalBody>
-        <ModalFooter>
-        <Button color="danger" variant="light" onPress={onClose}>
-            Close
-        </Button>
-        <Button color="primary" onPress={onClose}>
-            Action
-        </Button>
-        </ModalFooter>
-    </>
-    )}
-</ModalContent>
-</Modal>
-</> */}
